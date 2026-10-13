@@ -14,6 +14,7 @@ function sendAutoResponseDMZ() {
       "vielen Dank für Ihre Anfrage nach einer Monteurwohnung!\n" +
       "Wir prüfen die Anfrage jetzt und melden uns schnellstmöglich.\n\n" +
       "Für eine besonders schnelle Bearbeitung empfehlen wir Ihnen, uns direkt per WhatsApp Nachricht zu kontaktieren: +4917684801295\n\n" +
+      "Sehr gerne können Sie bereits jetzt eine Übersicht der bei uns verfügbaren Wohnungen aus unserer Buchungswebsite a.L8Street.com erhalten. Sie können alle Wohnungen auch sofort auf der Website buchen, oder uns einen Link zu der gewünschten Wohnung per WhatsApp oder E-Mail zukommen lassen\n" + 
       "Beste Grüße\n" +
       "Ihr Team von L8 Street";
 
