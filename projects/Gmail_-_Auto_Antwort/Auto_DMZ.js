@@ -109,9 +109,4 @@ function sendAutoResponseDMZ() {
   } catch (globalError) {
     logExecution(scriptName, "SYSTEM_FEHLER", "Globaler Skriptfehler", globalError.stack || globalError.toString());
   }
-
-  // Sobald neue Daten verarbeitet wurden, Verfügbarkeits-Prüfung sofort ausführen
-  if (processedAny) {
-    findAvailableApartments();
-  }
 }
