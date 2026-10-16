@@ -7,6 +7,7 @@ function sendAutoResponseDMZ() {
   try {
     var searchQuery = 'from:mail.dmz.de (subject:"Buchungsanfrage für" OR subject:"Neue Anfrage für") -label:' + labelPath + ' (is:unread OR newer_than:7d)';
     var threads = GmailApp.search(searchQuery);
+
     if (threads.length === 0) return;
 
     var label = GmailApp.getUserLabelByName(labelPath) || GmailApp.createLabel(labelPath);
@@ -14,13 +15,14 @@ function sendAutoResponseDMZ() {
       "vielen Dank für Ihre Anfrage nach einer Monteurwohnung!\n" +
       "Wir prüfen die Anfrage jetzt und melden uns schnellstmöglich.\n\n" +
       "Für eine besonders schnelle Bearbeitung empfehlen wir Ihnen, uns direkt per WhatsApp Nachricht zu kontaktieren: +4917684801295\n\n" +
-      "Sehr gerne können Sie bereits jetzt eine Übersicht der bei uns verfügbaren Wohnungen aus unserer Buchungswebsite a.L8Street.com erhalten. Sie können alle Wohnungen auch sofort auf der Website buchen, oder uns einen Link zu der gewünschten Wohnung per WhatsApp oder E-Mail zukommen lassen\n" + 
+      "Sehr gerne können Sie bereits jetzt eine Übersicht der bei uns verfügbaren Wohnungen aus unserer Buchungswebsite a.L8Street.com erhalten. Sie können alle Wohnungen auch sofort auf der Website buchen, oder uns einen Link zu der gewünschten Wohnung per WhatsApp oder E-Mail zukommen lassen\n" +
       "Beste Grüße\n" +
       "Ihr Team von L8 Street";
 
     for (var i = 0; i < threads.length; i++) {
       var thread = threads[i];
       var firstMessage = thread.getMessages()[0];
+
       if (firstMessage.getDate() < cutoffDate) continue;
 
       try {
@@ -55,6 +57,7 @@ function sendAutoResponseDMZ() {
         var addrMatch = bodyPlain.match(/\(([^)]+\d{5}[^)]+)\)/i);
         var msgMatch = bodyPlain.match(/Nachricht\s*:\s*([\s\S]*?)(?=\*?Sofort beantworten\*?|Nachrichtenverlauf|Mit freundlichen|Ihr Team|www\.Deutschland|$)/i);
         var cleanMsg = msgMatch ? msgMatch[1].replace(/<[^>]+>/g, "").trim() : "Keine Nachricht";
+
         var threadLink = "https://mail.google.com/mail/u/0/#all/" + thread.getId();
 
         var requestData = {
@@ -82,8 +85,10 @@ function sendAutoResponseDMZ() {
         if (dmzSheet.getLastRow() === 0) {
           dmzSheet.appendRow(["Zeit", "ID", "Name", "Telefonnummer", "Zeitraum", "Personen", "Titel", "Link", "Nachricht", "Adresse der Unterkunft", "JSON"]);
           dmzSheet.getRange(1, 1, 1, 11).setFontWeight("bold");
+          dmzSheet.setRowHeight(1, 21); // Setzt auch die Zeilenhöhe des Headers auf 21
         }
 
+        // Neue Zeile anhängen
         dmzSheet.appendRow([
           requestData.erfasstAm,
           requestData.kundenNummer,
@@ -97,6 +102,10 @@ function sendAutoResponseDMZ() {
           requestData.unterkunftAdresse,
           jsonString
         ]);
+
+        // ÄNDERUNG: Genau für die neu angehängte Zeile die Höhe auf 21 Pixel erzwingen
+        var lastRow = dmzSheet.getLastRow();
+        dmzSheet.setRowHeight(lastRow, 21);
 
         thread.addLabel(label);
         logExecution(scriptName, "ERFOLG", "Antwort & Daten erfasst für: " + cleanEmail, "");
