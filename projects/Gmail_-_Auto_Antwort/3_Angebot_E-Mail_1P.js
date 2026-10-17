@@ -21,16 +21,16 @@ function filterAndProcessSmallGroups() {
     const rowNum = i + 1;
     const row = data[i];
 
-    // 1. Prüfe Spalte AA (Index 26) und Spalte S (Index 18)
-    const emailStatus = String(row[26] || "").trim();     // Spalte AA
+    // 1. Prüfe Spalte AJ (Index 35) und Spalte S (Index 18)
+    const emailStatus = String(row[35] || "").trim(); // Spalte AJ
     const dopplungsStatus = String(row[18] || "").trim(); // Spalte S (Dopplungen)
 
-    // Wenn in Spalte AA ODER in Spalte S irgendetwas steht -> Zeile überspringen
+    // Wenn in Spalte AJ ODER in Spalte S irgendetwas steht -> Zeile überspringen
     if (emailStatus !== "" || dopplungsStatus !== "") continue;
 
-    const rawFormPersonen = String(row[5] || "").trim();       // Spalte F
-    const rawGeminiPersonen = String(row[13] || "").trim();     // Spalte N
-    const currentPfad = String(row[19] || "").trim();           // Spalte T
+    const rawFormPersonen = String(row[5] || "").trim(); // Spalte F
+    const rawGeminiPersonen = String(row[13] || "").trim(); // Spalte N
+    const currentPfad = String(row[19] || "").trim(); // Spalte T
 
     const formPersonen = parseInt(rawFormPersonen, 10);
     const geminiPersonen = parseInt(rawGeminiPersonen, 10);
@@ -41,22 +41,20 @@ function filterAndProcessSmallGroups() {
 
       // Wenn Gemini keinen höheren Wert geliefert hat
       if (!hasHigherGeminiValue) {
-        
         // Marker '1P' in Spalte T (Spalte 20) setzen, falls noch nicht vorhanden
         if (currentPfad !== "1P") {
           dmzSheet.getRange(rowNum, 20).setValue("1P");
           Logger.log(`Zeile ${rowNum}: Pfad '1P' in Spalte T eingetragen.`);
         }
 
-        const gastName = row[2] || "Damen und Herren";  // Spalte C
-        const id = row[1] || "";                       // Spalte B
+        const gastName = row[2] || "Damen und Herren"; // Spalte C
+        const id = row[1] || ""; // Spalte B
 
         // E-Mail Adresse ermitteln (Prio 1: Spalte L, Prio 2: JSON in Spalte K)
         let recipientEmail = String(row[11] || "").trim(); // Spalte L (Index 11)
-        
         if (!recipientEmail) {
           // Fallback auf Spalte K (Index 10) mit dem JSON
-          const jsonString = String(row[10] || "").trim(); 
+          const jsonString = String(row[10] || "").trim();
           if (jsonString) {
             try {
               const jsonData = JSON.parse(jsonString);
@@ -68,7 +66,7 @@ function filterAndProcessSmallGroups() {
             }
           }
         }
-        
+
         if (!recipientEmail) {
           Logger.log(`Zeile ${rowNum}: Keine E-Mail-Adresse gefunden. Überspringe Entwurf-Erstellung.`);
           continue; // Ohne Empfänger können wir keinen Entwurf anlegen
@@ -79,7 +77,7 @@ function filterAndProcessSmallGroups() {
           mailSubject += " (Anfrage ID: " + id + ")";
         }
 
-        const footerText = 
+        const footerText =
           "\n\nL8 Street \n\n" +
           "© 2017-2026\n" +
           "L8 Street GmbH\n" +
@@ -103,11 +101,9 @@ function filterAndProcessSmallGroups() {
         try {
           // Erstellt NUR einen Entwurf anstatt ihn sofort zu senden
           GmailApp.createDraft(recipientEmail, mailSubject, mailBody);
-
-          // Markiere in Spalte AA als ENTWURF
-          dmzSheet.getRange(rowNum, 27).setValue("ENTWURF");
-          SpreadsheetApp.flush(); 
-
+          // Markiere in Spalte AJ als ENTWURF
+          dmzSheet.getRange(rowNum, 36).setValue("ENTWURF");
+          SpreadsheetApp.flush();
           if (typeof logExecution === "function") {
             logExecution("DMZ Vorab-Filter", "ERFOLG", "Entwurf (1P) erstellt für: " + recipientEmail, "");
           }
