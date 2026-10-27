@@ -5,18 +5,21 @@ function extractDataFromMeinMonteurzimmer() {
   try {
     var searchQuery = 'from:mein-monteurzimmer.de subject:"Neue Buchungsanfrage auf mein-Monteurzimmer.de" -label:' + labelPath + ' (is:unread OR newer_than:7d)';
     var threads = GmailApp.search(searchQuery);
-
     if (threads.length === 0) return;
 
     var label = GmailApp.getUserLabelByName(labelPath) || GmailApp.createLabel(labelPath);
-
     var sheetId = "1VB253Cq_hr4YfFrWDXNG-pgv8qOOKAzb7jN_KYciEHw";
     var ss = SpreadsheetApp.openById(sheetId);
-    var mmzSheet = ss.getSheetByName("MMZ") || ss.insertSheet("MMZ");
 
+    // Bestehendes Sheet "MMZ"
+    var mmzSheet = ss.getSheetByName("MMZ") || ss.insertSheet("MMZ");
     if (mmzSheet.getLastRow() === 0) {
-      mmzSheet.appendRow(["Erfasst am", "Kundennummer", "Gast Name", "Telefonnummer", "Zeitraum", "Personen", "Unterkunft", "Anfrage URL", "Nachricht", "Adresse", "JSON String"]);
-      mmzSheet.getRange(1, 1, 1, 11).setFontWeight("bold");
+      mmzSheet.appendRow([
+        "Erfasst am", "Kundennummer", "Gast Name", "Telefonnummer",
+        "E-Mail", "Zeitraum", "Personen", "Unterkunft",
+        "Gmail Link", "Nachricht", "Adresse", "JSON String"
+      ]);
+      mmzSheet.getRange(1, 1, 1, 12).setFontWeight("bold");
     }
 
     for (var i = 0; i < threads.length; i++) {
@@ -24,6 +27,12 @@ function extractDataFromMeinMonteurzimmer() {
       var message = thread.getMessages()[0];
       var bodyHtml = message.getBody();
 
+      // 1. E-Mail-Adresse extrahieren
+      var emailMatch = bodyHtml.match(/mailto:([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i) ||
+                       bodyHtml.match(/E-Mail[\s\S]*?>([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})</i);
+      var customerEmail = emailMatch ? emailMatch[1].trim() : "Nicht gefunden";
+
+      // 2. Link zur Detailseite extrahieren
       var linkMatch = bodyHtml.match(/https:\/\/mein-monteurzimmer\.de\/anfrage\/[a-zA-Z0-9\/]+/);
       if (!linkMatch) {
         thread.addLabel(label);
@@ -31,7 +40,6 @@ function extractDataFromMeinMonteurzimmer() {
       }
 
       var targetUrl = linkMatch[0];
-
       var phone = "Nicht gefunden";
       var firstName = "", lastName = "", company = "";
       var housingName = "", housingId = "";
@@ -84,18 +92,24 @@ function extractDataFromMeinMonteurzimmer() {
 
         var msgMatch = htmlContent.match(/"message"\s*:\s*"((?:\\"|[^"])*?)"/);
         if (msgMatch && msgMatch[1]) {
-           guestMessage = msgMatch[1].replace(/\\"/g, '"').replace(/\\\//g, '/').replace(/\\n/g, ' ');
+          guestMessage = msgMatch[1].replace(/\\"/g, '"').replace(/\\\//g, '/').replace(/\\n/g, ' ');
         }
 
         var createdMatch = htmlContent.match(/"createdDate"\s*:\s*"([^"]+)"/);
         if (createdMatch) createdDate = createdMatch[1];
 
+        if (customerEmail === "Nicht gefunden") {
+          var emailUrlMatch = htmlContent.match(/"email"\s*:\s*"([^"]+)"/);
+          if (emailUrlMatch && emailUrlMatch[1] && emailUrlMatch[1] !== "null") {
+            customerEmail = emailUrlMatch[1].replace(/\\/g, "");
+          }
+        }
       } catch (fetchError) {
         logExecution(scriptName, "FEHLER", "URL konnte nicht geladen werden: " + targetUrl, fetchError.toString());
       }
 
       function decodeUnicode(str) {
-        if(!str) return "";
+        if (!str) return "";
         return str.replace(/\\u([0-9a-fA-F]{4})/g, function(match, grp) {
           return String.fromCharCode(parseInt(grp, 16));
         });
@@ -111,37 +125,44 @@ function extractDataFromMeinMonteurzimmer() {
       var cleanedMessage = decodeUnicode(guestMessage);
       var zeitraumStr = (bookingFrom && bookingTo) ? (bookingFrom + " - " + bookingTo) : "N/A";
 
-      if (!fullGastName && phone === "Nicht gefunden") {
+      if (!fullGastName && phone === "Nicht gefunden" && customerEmail === "Nicht gefunden") {
         thread.addLabel(label);
         continue;
       }
 
+      var gmailMessageLink = "https://mail.google.com/mail/u/0/#all/" + message.getId();
+
+      // Einheitliches JSON-Schema
       var requestData = {
         portal: "mein-monteurzimmer.de",
         kundenNummer: housingId || "N/A",
-        telefonnummer: phone,
         gastName: fullGastName || "N/A",
+        telefonnummer: phone,
         zeitraum: zeitraumStr,
         personen: maxPersons || "N/A",
         unterkunftTitel: cleanedHousingName || "N/A",
-        unterkunftAdresse: fullAddress,
+        link: gmailMessageLink,
         nachricht: cleanedMessage,
+        unterkunftAdresse: fullAddress,
+        email: customerEmail,
+        erfasstAm: new Date().toISOString(),
         anfrageUrl: targetUrl,
-        anfrageErstelltAm: createdDate || "N/A",
-        skriptErfasstAm: new Date().toISOString()
+        anfrageErstelltAm: createdDate || "N/A"
       };
 
-      var jsonString = JSON.stringify(requestData, null, 2);
+      var jsonString = JSON.stringify(requestData);
 
+      // In Tab "MMZ" wie gewohnt mit allen Spalten schreiben
       mmzSheet.appendRow([
-        requestData.skriptErfasstAm,
+        requestData.erfasstAm,
         requestData.kundenNummer,
         requestData.gastName,
         requestData.telefonnummer,
+        requestData.email,
         requestData.zeitraum,
         requestData.personen,
         requestData.unterkunftTitel,
-        requestData.anfrageUrl,
+        requestData.link,
         requestData.nachricht,
         requestData.unterkunftAdresse,
         jsonString

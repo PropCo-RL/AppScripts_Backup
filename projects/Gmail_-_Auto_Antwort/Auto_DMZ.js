@@ -1,6 +1,6 @@
 function sendAutoResponseDMZ() {
   var scriptName = "DMZ Auto-Response";
-  var cutoffDate = new Date("2026-10-03T12:57:00+02:00");
+  var cutoffDate = new Date("2026-10-25T12:57:00+02:00");
   var labelPath = "API_Buchung/DMZ/aDMZ";
   var processedAny = false;
 
