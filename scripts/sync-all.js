@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { google } = require('googleapis');
+const generateOverview = require('./generate-overview');
 
 // ==========================================
 // 1. EINGEBETTETE GOOGLE SHEET SKRIPTE
@@ -129,6 +130,9 @@ async function syncAllScripts() {
     }
 
     console.log(`Sync abgeschlossen! ${downloadedCount} Apps Script Projekte erfolgreich heruntergeladen.`);
+    const overviewPath = path.join(__dirname, '../projects-overview.csv');
+    const scriptFileCount = generateOverview(projectsDir, overviewPath);
+    console.log(`Projektübersicht erstellt: ${scriptFileCount} Skriptdateien in ${overviewPath}.`);
 
   } catch (error) {
     console.error("Kritischer Fehler:", error.message || error);
