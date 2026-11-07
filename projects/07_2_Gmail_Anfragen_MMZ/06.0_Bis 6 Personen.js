@@ -3,7 +3,6 @@
 // Liest Spalte D (Daten) & Spalte E (Routing), schreibt in Spalte F
 // Prüft ausschließlich NEUE Zeilen (Spalte F komplett leer)
 // =================================================================
-
 const KONFIGURATION = {
   INVENTORY_SPREADSHEET_ID: '1Aq9doxAkEw435bRCpXafayRwdNeaP9LVMU1YwWG7z70',
   TABELLE_LEADS: 'MMZ',
@@ -18,7 +17,6 @@ const KONFIGURATION = {
  */
 function runApartmentMatchingEngineA_MMZ() {
   Logger.log("=== START ENGINE A MATCHING FÜR MMZ (STD_SHORT & STD_LONG) ===");
-  
   const aktiveArbeitsmappe = SpreadsheetApp.getActiveSpreadsheet();
   const leadsTabelle = aktiveArbeitsmappe.getSheetByName(KONFIGURATION.TABELLE_LEADS);
   if (!leadsTabelle) {
@@ -40,10 +38,8 @@ function runApartmentMatchingEngineA_MMZ() {
   }
 
   stelleEngineAHeaderSicher(leadsTabelle);
-
   const wohnungsListe = ladeWohnungenAusInventar(inventarTabelle);
   const buchungenKarte = ladeBuchungenAusKalender(kalenderTabelle);
-  
   verarbeiteLeadsUndSchreibeErgebnisse(leadsTabelle, letztesZeilenEnde, wohnungsListe, buchungenKarte);
   Logger.log("=== ENGINE A ABGESCHLOSSEN ===");
 }
@@ -62,6 +58,7 @@ function ladeInventarSpreadsheet(tabellenId) {
 
 /**
  * Liest alle Apartments aus Tab 'M' ein
+ * Ignoriert Zeilen, wenn in Spalte AJ ("ausschluss") ein "x" steht
  */
 function ladeWohnungenAusInventar(tabelle) {
   const rohWerte = tabelle.getDataRange().getValues();
@@ -70,6 +67,10 @@ function ladeWohnungenAusInventar(tabelle) {
   for (let zeile = 1; zeile < rohWerte.length; zeile++) {
     const wohnungsName = String(rohWerte[zeile][0] || "").trim();
     if (!wohnungsName) continue;
+
+    // Spalte AJ (Index 35): Prüfung auf Ausschluss "x"
+    const istAusgeschlossen = String(rohWerte[zeile][35] || "").trim().toLowerCase() === "x";
+    if (istAusgeschlossen) continue;
 
     const rohesKuerzel = String(rohWerte[zeile][6] || "").trim();
     const bereinigtesKuerzel = cleanShortCode(rohesKuerzel) || wohnungsName;
@@ -83,7 +84,8 @@ function ladeWohnungenAusInventar(tabelle) {
       istDauerhaftBelegt: String(rohWerte[zeile][44] || "").trim().toLowerCase() === "x"
     });
   }
-  Logger.log(`Geladene Apartments aus Tab M: ${wohnungen.length}`);
+
+  Logger.log(`Geladene Apartments aus Tab M (nach Ausschluss Spalte AJ): ${wohnungen.length}`);
   return wohnungen;
 }
 
@@ -104,7 +106,6 @@ function ladeBuchungenAusKalender(tabelle) {
     if (!buchungenProWohnung[unterkunftsName]) {
       buchungenProWohnung[unterkunftsName] = [];
     }
-
     buchungenProWohnung[unterkunftsName].push({
       startMillisekunden: new Date(startDatumText + "T00:00:00Z").getTime(),
       endeMillisekunden: new Date(endDatumText + "T00:00:00Z").getTime()
@@ -172,12 +173,11 @@ function pruefeLeadGueltigkeit(zeile) {
   if (!eindeutigeId || eindeutigeId === "-" || !datenJson || !routingJson || routingJson.startsWith("FEHLER")) {
     return false;
   }
-  
   return optionsZelle === "";
 }
 
 /**
- * Bereitet Anfrageparameter auf, berechnet Vorlaufzeit und loggt unvollständige Zeilen
+ * Bereitet Anfrageparameter auf, berechnet Vorlaufzeit und setzt Fallback bei fehlendem Enddatum
  */
 function extrahiereLeadParameter(datenObjekt, kennzahlen, zeilennummer, heuteUtcMs) {
   const ortDaten = datenObjekt.ort || {};
@@ -186,9 +186,15 @@ function extrahiereLeadParameter(datenObjekt, kennzahlen, zeilennummer, heuteUtc
 
   const anzahlPersonen = Number(personenDaten.Pers) || Number(kennzahlen.pers) || 0;
   const startDatum = String(dauerDaten.start || "").trim();
-  const endDatum = String(dauerDaten.ende || "").trim();
-  const zielZimmer = Number(kennzahlen.zimmer) || Math.ceil(anzahlPersonen / 2);
+  let endDatum = String(dauerDaten.ende || "").trim();
 
+  // Einheitlicher 6-Tage-Fallback, falls nur Startdatum vorhanden ist
+  if (startDatum && !endDatum) {
+    const basisStart = new Date(startDatum + "T00:00:00Z");
+    endDatum = new Date(basisStart.getTime() + 6 * KONFIGURATION.MILLISEKUNDEN_PRO_TAG).toISOString().split("T")[0];
+  }
+
+  const zielZimmer = Number(kennzahlen.zimmer) || Math.ceil(anzahlPersonen / 2);
   const roherOrtText = String(ortDaten.suchortText || ortDaten.Ort || "").trim();
   const bereinigteStadt = extractPureCityName(roherOrtText);
 
@@ -198,6 +204,13 @@ function extrahiereLeadParameter(datenObjekt, kennzahlen, zeilennummer, heuteUtc
   }
 
   const anfrageStartMs = new Date(startDatum + "T00:00:00Z").getTime();
+  const anfrageEndeMs = new Date(endDatum + "T00:00:00Z").getTime();
+
+  if (anfrageEndeMs <= anfrageStartMs) {
+    Logger.log(`Zeile ${zeilennummer}: Ungültige Reisedauer (Ende vor Start).`);
+    return null;
+  }
+
   const tageBisAnreise = Math.round((anfrageStartMs - heuteUtcMs) / KONFIGURATION.MILLISEKUNDEN_PRO_TAG);
 
   return {
@@ -205,7 +218,7 @@ function extrahiereLeadParameter(datenObjekt, kennzahlen, zeilennummer, heuteUtc
     personen: anzahlPersonen,
     zielZimmer: zielZimmer,
     startMs: anfrageStartMs,
-    endeMs: new Date(endDatum + "T00:00:00Z").getTime(),
+    endeMs: anfrageEndeMs,
     tageBisAnreise: tageBisAnreise
   };
 }
@@ -235,7 +248,6 @@ function findeFreieWohnungen(anfrage, wohnungen, buchungen) {
       lueckeT: lueckenBewertung.anzeigeTage
     });
   }
-
   return gefundeneOptionen;
 }
 
@@ -292,7 +304,6 @@ function pruefeKalenderVerfuegbarkeit(wohnungsName, anfrageStartMs, anfrageEndeM
       }
     }
   }
-
   return { istBelegt: istBelegt, letzteAbreiseMs: letzteAbreiseMs };
 }
 
@@ -301,7 +312,6 @@ function pruefeKalenderVerfuegbarkeit(wohnungsName, anfrageStartMs, anfrageEndeM
  */
 function berechneLueckenScore(letzteAbreiseMs, anfrageStartMs, tageBisAnreise) {
   let anzeigeTage = null;
-
   if (letzteAbreiseMs !== null) {
     const differenzTage = Math.max(0, Math.round((anfrageStartMs - letzteAbreiseMs) / KONFIGURATION.MILLISEKUNDEN_PRO_TAG));
     if (differenzTage <= 14) {
@@ -309,8 +319,8 @@ function berechneLueckenScore(letzteAbreiseMs, anfrageStartMs, tageBisAnreise) {
     }
   }
 
-  let bewertungsScore = anzeigeTage === null 
-    ? (tageBisAnreise <= 5 ? -1 : 999) 
+  let bewertungsScore = anzeigeTage === null
+    ? (tageBisAnreise <= 5 ? -1 : 999)
     : anzeigeTage;
 
   return { score: bewertungsScore, anzeigeTage: anzeigeTage };
@@ -348,16 +358,26 @@ function cleanShortCode(kuerzelText) {
 }
 
 /**
- * Wandelt Datumsangaben oder Date-Objekte in ein ISO-Format (YYYY-MM-DD) um
+ * Wandelt Datumsangaben (Date-Objekt, DD.MM.YYYY oder YYYY-MM-DD) in ein einheitliches ISO-Format (YYYY-MM-DD) um
  */
 function parseIsoDateString(eingabeDatum) {
   if (!eingabeDatum) return "";
+
   if (eingabeDatum instanceof Date) {
     return Utilities.formatDate(eingabeDatum, "UTC", "yyyy-MM-dd");
   }
+
   const datumString = String(eingabeDatum).trim();
-  const bereinigt = datumString.split("T")[0];
-  return /^\d{4}-\d{2}-\d{2}$/.test(bereinigt) ? bereinigt : "";
+
+  // Deutsches Format DD.MM.YYYY erkennen und in YYYY-MM-DD umwandeln
+  if (/^\d{1,2}\.\d{1,2}\.\d{4}$/.test(datumString)) {
+    const teile = datumString.split(".");
+    return `${teile[2]}-${teile[1].padStart(2, "0")}-${teile[0].padStart(2, "0")}`;
+  }
+
+  // ISO-Format YYYY-MM-DD (auch wenn Zeitanteile mit T oder Leerzeichen folgen)
+  const isoTeil = datumString.split(/[T\s]/)[0];
+  return /^\d{4}-\d{2}-\d{2}$/.test(isoTeil) ? isoTeil : "";
 }
 
 /**
@@ -366,10 +386,8 @@ function parseIsoDateString(eingabeDatum) {
 function extractPureCityName(roherOrt) {
   if (!roherOrt) return "";
   let stadt = String(roherOrt).toLowerCase();
-  
   stadt = stadt.replace(/\b\d{4,5}\b/g, "");
   stadt = stadt.replace(/\b(nähe|raum|bereich|stadt|umgebung|zentrum|mitte|ot|ortsteil)\b/gi, "");
   stadt = stadt.replace(/[,\.\-\/\(\)]/g, " ");
-  
   return stadt.replace(/\s+/g, " ").trim();
 }

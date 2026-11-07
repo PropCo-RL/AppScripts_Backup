@@ -232,20 +232,27 @@ function cleanShortCode(rawCode) {
   return String(rawCode).trim().replace(/[\r\n\t]/g, "");
 }
 
-function parseIsoDateString(val) {
-  if (!val) return "";
-  if (val instanceof Date) {
-    return Utilities.formatDate(val, "UTC", "yyyy-MM-dd");
+/**
+ * Wandelt Datumsangaben (Date-Objekt, DD.MM.YYYY oder YYYY-MM-DD) in ein einheitliches ISO-Format (YYYY-MM-DD) um
+ */
+function parseIsoDateString(eingabeDatum) {
+  if (!eingabeDatum) return "";
+
+  if (eingabeDatum instanceof Date) {
+    return Utilities.formatDate(eingabeDatum, "UTC", "yyyy-MM-dd");
   }
-  const str = String(val).trim();
-  if (/^\d{1,2}\.\d{1,2}\.\d{4}$/.test(str)) {
-    const parts = str.split(".");
-    return `${parts[2]}-${parts[1].padStart(2, "0")}-${parts[0].padStart(2, "0")}`;
+
+  const datumString = String(eingabeDatum).trim();
+
+  // Deutsches Format DD.MM.YYYY erkennen und in YYYY-MM-DD umwandeln
+  if (/^\d{1,2}\.\d{1,2}\.\d{4}$/.test(datumString)) {
+    const teile = datumString.split(".");
+    return `${teile[2]}-${teile[1].padStart(2, "0")}-${teile[0].padStart(2, "0")}`;
   }
-  if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
-    return str.substring(0, 10);
-  }
-  return "";
+
+  // ISO-Format YYYY-MM-DD (auch wenn Zeitanteile mit T oder Leerzeichen folgen)
+  const isoTeil = datumString.split(/[T\s]/)[0];
+  return /^\d{4}-\d{2}-\d{2}$/.test(isoTeil) ? isoTeil : "";
 }
 
 function extractPureCityName(text) {

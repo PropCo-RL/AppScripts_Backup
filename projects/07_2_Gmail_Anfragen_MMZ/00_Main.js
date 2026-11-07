@@ -126,16 +126,6 @@ function runFullMMZPipeline() {
   });
   SpreadsheetApp.flush();
 
-  // 9. Dynamischer Sanity Check (Gemini Revisor) -> Spalte K
-  executeStep("9_Sanity Check (Gemini Revisor)", function() {
-    if (typeof runDynamicSanityCheckMMZ === "function") {
-      runDynamicSanityCheckMMZ();
-    } else {
-      Logger.log("⚠️ Funktion runDynamicSanityCheckMMZ() nicht gefunden.");
-    }
-  });
-  SpreadsheetApp.flush();
-
   // 10. Audit & Hänger-Prüfung -> Schreibt erst JETZT ins Tab "Kontrolle"
   executeStep("10_Audit Kontrolle (Tab Kontrolle)", function() {
     if (typeof logMMZPipelineAudit === "function") {

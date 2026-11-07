@@ -81,6 +81,7 @@ function createOrReplyDraft(to, subject, plainText, htmlText, forwardMessageId, 
             lastMsg.getBody() +
             `</blockquote>`;
         }
+
         const fullPlain = plainText + quotedPlain;
         const fullHtml = htmlText ? (htmlText + quotedHtml) : "";
         const replyOptions = { replyTo: "support@l8street.com" };
@@ -115,6 +116,7 @@ function createOrReplyDraft(to, subject, plainText, htmlText, forwardMessageId, 
 function handleMissingCustomerEmail(leadJson, labelName) {
   const forwardThreadId = leadJson.forwardThreadId || "";
   let labelApplied = false;
+
   if (forwardThreadId) {
     try {
       let labelObj = GmailApp.getUserLabelByName(labelName);
@@ -137,6 +139,7 @@ function handleMissingCustomerEmail(leadJson, labelName) {
       Logger.log("Konnte Label nicht anheften: " + lblErr.toString());
     }
   }
+
   return {
     status: "MANUELL_PORTAL_BEANTWORTEN",
     label: labelName,
@@ -147,14 +150,24 @@ function handleMissingCustomerEmail(leadJson, labelName) {
   };
 }
 
+/**
+ * Lädt Apartment-Stammdaten aus Tab 'M'
+ * Ignoriert gesperrte Apartments aus Spalte AJ (Index 35)
+ */
 function loadApartmentInventoryMap(invSheetM) {
   const mData = invSheetM.getDataRange().getValues();
   const map = {};
+
   for (let r = 1; r < mData.length; r++) {
+    // Spalte AJ (Index 35): Ausschluss-Prüfung
+    const istAusgeschlossen = String(mData[r][35] || "").trim().toLowerCase() === "x";
+    if (istAusgeschlossen) continue;
+
     const rawSlug = String(mData[r][6] || "").trim();
     const code = cleanShortCode(rawSlug);
     if (!code) continue;
-    map[code] = {
+
+    map[code.toLowerCase()] = {
       address: String(mData[r][5] || "").trim() || "Monteurwohnung",
       schlafzimmer: Number(mData[r][14]) || 2,
       maxPersonen: Number(mData[r][15]) || 4,
@@ -179,6 +192,7 @@ function formatGermanDate(isoStr) {
 function checkIsLongstayVip(persCount, nights, leadJson) {
   if (persCount < 3) return false;
   if (nights >= 60) return true;
+
   let textSource = "";
   if (leadJson && typeof leadJson === "object") {
     textSource = String(leadJson.nachricht || leadJson.bemerkung || leadJson.text || leadJson.notiz || "");
@@ -249,7 +263,7 @@ function buildNoAvailabilityContent(anredeZeile, footerText) {
 
 function buildSingleOfferContent(best, aptDetailsMap, persCount, nights, anredeZeile, footerText, leadJson, altObj) {
   const cleanId = cleanShortCode(best.id);
-  const apt = aptDetailsMap[cleanId] || {
+  const apt = aptDetailsMap[cleanId.toLowerCase()] || {
     address: "Monteurwohnung",
     schlafzimmer: 2,
     maxPersonen: persCount,
@@ -313,13 +327,14 @@ function buildKombiOfferContent(bestKombi, aptDetailsMap, persCount, nights, anr
 
   bestKombi.apts.forEach((id, idx) => {
     const cleanId = cleanShortCode(id);
-    const apt = aptDetailsMap[cleanId] || {
+    const apt = aptDetailsMap[cleanId.toLowerCase()] || {
       address: "Monteurwohnung",
       schlafzimmer: 2,
       maxPersonen: 4,
       netPricePerNight: 85.00,
       isCustomPrice: false
     };
+
     if (!apt.isCustomPrice) usedStandardPrice = true;
     const nNetto = roundEur(apt.netPricePerNight);
     summeNachtNetto = roundEur(summeNachtNetto + nNetto);
@@ -403,8 +418,7 @@ function getValidatedCustomerEmail(direktEmail, leadEmail) {
     if (!email || !email.includes("@")) continue;
     if (email.includes("••") || email.includes("nach Klick")) continue;
     const lower = email.toLowerCase();
-    if (
-      lower.includes("mein-monteurzimmer.de") ||
+    if (lower.includes("mein-monteurzimmer.de") ||
       lower.includes("mabach.info") ||
       lower.includes("l8street.com") ||
       lower.startsWith("noreply") ||
@@ -443,52 +457,56 @@ function footerTextToHtml(footer) {
     .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1">$1</a>');
 }
 
+/**
+ * Header für Spalte J (Spalte 10) sicherstellen
+ */
 function ensureDraftHeaderMMZ(sheet) {
-  const cell = sheet.getRange(1, 8);
-  if (!cell.getValue()) {
+  const cell = sheet.getRange(1, 10); // Spalte J (10)
+  if (!cell.getValue() || cell.getValue() !== "Draft Status (JSON)") {
     cell.setValue("Draft Status (JSON)");
     cell.setFontWeight("bold");
-    sheet.getRange("H:H").setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+    sheet.getRange("J:J").setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
   }
 }
 
+/**
+ * Bereinigt Apartment-Kürzel oder URLs und normalisiert diese auf Kleinbuchstaben
+ */
 function cleanShortCode(val) {
   if (!val) return "";
   return String(val)
-    .trim().toLowerCase()
+    .trim()
+    .toLowerCase()
     .replace(/^https?:\/\/a\.l8street\.com\/a\//i, "")
     .replace(/^\/?a\//i, "")
     .replace(/^\//, "")
     .replace(/\/$/, "");
 }
 
-function parseIsoDateString(val) {
-  if (!val) return "";
-  if (val instanceof Date) {
-    return Utilities.formatDate(val, "GMT", "yyyy-MM-dd");
+function parseIsoDateString(eingabeDatum) {
+  if (!eingabeDatum) return "";
+  if (eingabeDatum instanceof Date) {
+    return Utilities.formatDate(eingabeDatum, "UTC", "yyyy-MM-dd");
   }
-  const str = String(val).trim();
-  const m = str.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
-  if (m) {
-    return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  const datumString = String(eingabeDatum).trim();
+  if (/^\d{1,2}\.\d{1,2}\.\d{4}$/.test(datumString)) {
+    const teile = datumString.split(".");
+    return `${teile[2]}-${teile[1].padStart(2, "0")}-${teile[0].padStart(2, "0")}`;
   }
-  return "";
+  const isoTeil = datumString.split(/[T\s]/)[0];
+  return /^\d{4}-\d{2}-\d{2}$/.test(isoTeil) ? isoTeil : "";
 }
 
-function extractPureCityName(ortStr) {
-  if (!ortStr) return "";
-  let clean = String(ortStr).toLowerCase();
-  clean = clean.replace(/\b\d{5}\b/g, " ");
-  clean = clean.replace(/umgebung.*$/i, " ");
-  clean = clean.replace(/monteur24\s*-\s*/i, " ");
-  clean = clean.replace(/l8\s*street\s*-\s*/i, " ");
-  clean = clean.replace(/top\s*monteurwohnung\s*/i, " ");
-  clean = clean.replace(/monteurwohnung\s*/i, " ");
-  clean = clean.replace(/mit\s*parkplatz/i, " ");
-  clean = clean.replace(/und\s*rhein-neckar/i, " ");
-  clean = clean.replace(/[\/\\#,+()$~%.'":*?<>{}\-_]/g, " ").trim();
-  const parts = clean.split(/\s+/).filter(w => w.length >= 3);
-  return parts.length > 0 ? parts[0] : "";
+function extractPureCityName(roherOrt) {
+  if (!roherOrt) return "";
+  let stadt = String(roherOrt).toLowerCase().trim();
+  stadt = stadt.replace(/\b\d{4,5}\b/g, "").trim();
+  stadt = stadt.replace(/\b(nähe|raum|bereich|stadt|umgebung|zentrum|mitte|ot|ortsteil|city|hbf|bahnhof)\b/gi, "").trim();
+  if (stadt.includes(",")) {
+    stadt = stadt.split(",")[0].trim();
+  }
+  stadt = stadt.replace(/[.\-\/\(\)]/g, " ");
+  return stadt.replace(/\s+/g, " ").trim();
 }
 
 function roundEur(val) {
