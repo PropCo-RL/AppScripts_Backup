@@ -1,14 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const { google } = require('googleapis');
-
-// ==========================================
-// KONFIGURATION: MASTER ÜBERSICHTS-SHEET
-// ==========================================
-const CONFIG = {
-  MASTER_SHEET_ID: "1rLFAl4pdgADo6j_vaDxmPMd8kAHL0V8Pqp-DjeXBxLo",
-  RANGE: "Übersicht!E2:E" // Liest Spalte E ab Zeile 2 dynamisch aus
-};
+const generateOverview = require('./generate-overview');
+const { extractBackupProjects } = require('./backup-index');
+const BACKUP_INDEX_SPREADSHEET_ID = '1rLFAl4pdgADo6j_vaDxmPMd8kAHL0V8Pqp-DjeXBxLo';
+const BACKUP_INDEX_RANGE = "'Übersicht'!A:E";
 
 // ==========================================
 // HILFSFUNKTION: SCRIPT-IDS AUS GOOGLE SHEET LESEN
@@ -51,53 +47,26 @@ async function syncAllScripts() {
 
     const credentials = JSON.parse(saCredentialsJson);
 
-    // Strenger READ-ONLY Zugriff (Drive, Apps Script AND Sheets)
     const auth = new google.auth.GoogleAuth({
       credentials,
       scopes: [
-        'https://www.googleapis.com/auth/drive.readonly',
-        'https://www.googleapis.com/auth/script.projects.readonly',
-        'https://www.googleapis.com/auth/spreadsheets.readonly'
+        'https://www.googleapis.com/auth/spreadsheets.readonly',
+        'https://www.googleapis.com/auth/script.projects.readonly'
       ]
     });
 
-    const drive = google.drive({ version: 'v3', auth });
+    const sheets = google.sheets({ version: 'v4', auth });
     const scriptApi = google.script({ version: 'v1', auth });
 
-    // 1. Freistehende Standalone-Skripte via Drive API ermitteln
-    console.log("Suche freistehende Skripte in Google Drive...");
-    const driveRes = await drive.files.list({
-      q: "mimeType='application/vnd.google-apps.script' and trashed=false",
-      fields: 'files(id, name)',
-      pageSize: 1000,
-      supportsAllDrives: true,
-      includeItemsFromAllDrives: true,
-      corpora: 'allDrives'
+    console.log('Lese Apps-Script-Projekte aus dem Backup-Index...');
+    const index = await sheets.spreadsheets.values.get({
+      spreadsheetId: BACKUP_INDEX_SPREADSHEET_ID,
+      range: BACKUP_INDEX_RANGE,
+      valueRenderOption: 'FORMATTED_VALUE'
     });
+    const projects = extractBackupProjects(index.data.values || []);
 
-    const standaloneScripts = driveRes.data.files || [];
-    console.log(`${standaloneScripts.length} freistehende Skripte gefunden.`);
-
-    // 2. Eingebettete Skript-IDs live aus dem Sheet holen
-    const dynamicSheetIds = await fetchDynamicScriptIds(auth);
-
-    // 3. Zusammenführen ohne Duplikate
-    const processedIds = new Set();
-    const allScripts = [];
-
-    for (const file of standaloneScripts) {
-      processedIds.add(file.id);
-      allScripts.push({ id: file.id, name: file.name });
-    }
-
-    for (const id of dynamicSheetIds) {
-      if (!processedIds.has(id)) {
-        processedIds.add(id);
-        allScripts.push({ id: id, name: null });
-      }
-    }
-
-    console.log(`Insgesamt zu verarbeiten: ${allScripts.length} Projekte. Starte Download...`);
+    console.log(`${projects.length} Projekte im Index gefunden. Starte Download...`);
 
     const projectsDir = path.join(__dirname, '../projects');
     if (!fs.existsSync(projectsDir)) {
@@ -107,32 +76,27 @@ async function syncAllScripts() {
     let downloadedCount = 0;
     let failedCount = 0;
 
-    // 4. Download-Schleife
-    for (const file of allScripts) {
+    const expectedFolders = new Set();
+    for (const project of projects) {
       try {
-        let projectName = file.name;
-
-        if (!projectName) {
-          const projectInfo = await scriptApi.projects.get({ scriptId: file.id });
-          projectName = projectInfo.data.title || `Unnamed_Script_${file.id}`;
-        }
-
-        const content = await scriptApi.projects.getContent({ scriptId: file.id });
+        const content = await scriptApi.projects.getContent({ scriptId: project.scriptId });
         const scriptFiles = content.data.files || [];
 
-        if (scriptFiles.length === 0) continue;
+        if (scriptFiles.length === 0) {
+          throw new Error('Google hat keine Projektdateien zurückgegeben.');
+        }
 
-        const folderName = projectName.replace(/[^a-zA-Z0-9_-]/g, '_');
-        const folderPath = path.join(projectsDir, folderName);
+        const folderPath = path.join(projectsDir, project.folderName);
 
-        console.log(`Lade herunter: ${projectName} (${file.id})...`);
+        console.log(`Lade herunter: ${project.projectName} (${project.scriptId})...`);
 
         if (!fs.existsSync(folderPath)) {
           fs.mkdirSync(folderPath, { recursive: true });
         }
 
-        const claspJson = { scriptId: file.id, rootDir: "." };
+        const claspJson = { scriptId: project.scriptId, rootDir: '.' };
         fs.writeFileSync(path.join(folderPath, '.clasp.json'), JSON.stringify(claspJson, null, 2));
+        const expectedFiles = new Set(['.clasp.json']);
 
         for (const sFile of scriptFiles) {
           let ext = '.js';
@@ -140,26 +104,41 @@ async function syncAllScripts() {
           if (sFile.type === 'JSON') ext = '.json';
 
           const filename = (sFile.name === 'appsscript' && ext === '.json')
-            ? 'appsscript.json'
+            ? 'appsscript.json' 
             : `${sFile.name}${ext}`;
+          if (!filename || path.basename(filename) !== filename) {
+            throw new Error(`Ungültiger Dateiname von Google: ${filename}`);
+          }
 
           const filePath = path.join(folderPath, filename);
           fs.writeFileSync(filePath, sFile.source || '');
+          expectedFiles.add(filename);
         }
 
+        for (const entry of fs.readdirSync(folderPath, { withFileTypes: true })) {
+          if (entry.isFile() && /\.(gs|js|html|json)$/i.test(entry.name) && !expectedFiles.has(entry.name)) {
+            fs.unlinkSync(path.join(folderPath, entry.name));
+          }
+        }
+
+        expectedFolders.add(project.folderName);
         downloadedCount++;
       } catch (err) {
-        console.error(`Fehler bei Skript ID ${file.id}: Zugriff verweigert oder ID ungültig.`);
-        failedCount++;
+        throw new Error(`Fehler bei ${project.projectName} (${project.scriptId}): ${err.message}`);
       }
     }
 
-    console.log(`\nSync abgeschlossen! ${downloadedCount} Apps Script Projekte erfolgreich heruntergeladen.`);
-
-    if (failedCount > 0) {
-      console.warn(`Achtung: ${failedCount} Skripte konnten nicht gesichert werden.`);
-      process.exit(1);
+    console.log(`Sync abgeschlossen! ${downloadedCount} Apps Script Projekte erfolgreich heruntergeladen.`);
+    for (const entry of fs.readdirSync(projectsDir, { withFileTypes: true })) {
+      if (entry.isDirectory() && !expectedFolders.has(entry.name)) {
+        fs.rmSync(path.join(projectsDir, entry.name), { recursive: true, force: true });
+        console.log(`Entferne nicht mehr gelistetes Projekt: ${entry.name}`);
+      }
     }
+
+    const overviewPath = path.join(__dirname, '../projects-overview.csv');
+    const scriptFileCount = generateOverview(projectsDir, overviewPath);
+    console.log(`Projektübersicht erstellt: ${scriptFileCount} Skriptdateien in ${overviewPath}.`);
 
   } catch (error) {
     console.error("Kritischer Fehler:", error.message || error);
