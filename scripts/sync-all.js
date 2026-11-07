@@ -4,6 +4,7 @@ const { google } = require('googleapis');
 const generateOverview = require('./generate-overview');
 const { extractBackupProjects } = require('./backup-index');
 const BACKUP_INDEX_SPREADSHEET_ID = '1rLFAl4pdgADo6j_vaDxmPMd8kAHL0V8Pqp-DjeXBxLo';
+const BACKUP_INDEX_RANGE = "'Übersicht'!A:E";
 
 async function syncAllScripts() {
   try {
@@ -26,23 +27,12 @@ async function syncAllScripts() {
     const scriptApi = google.script({ version: 'v1', auth });
 
     console.log('Lese Apps-Script-Projekte aus dem Backup-Index...');
-    const index = await sheets.spreadsheets.get({
+    const index = await sheets.spreadsheets.values.get({
       spreadsheetId: BACKUP_INDEX_SPREADSHEET_ID,
-      fields: 'sheets.properties.title'
-    });
-    const ranges = (index.data.sheets || []).map(sheet => {
-      const title = sheet.properties.title.replace(/'/g, "''");
-      return `'${title}'!A:E`;
-    });
-    if (ranges.length === 0) {
-      throw new Error('Der Backup-Index enthält keine Tabellenblätter.');
-    }
-    const indexValues = await sheets.spreadsheets.values.batchGet({
-      spreadsheetId: BACKUP_INDEX_SPREADSHEET_ID,
-      ranges,
+      range: BACKUP_INDEX_RANGE,
       valueRenderOption: 'FORMATTED_VALUE'
     });
-    const projects = extractBackupProjects(indexValues.data.valueRanges || []);
+    const projects = extractBackupProjects(index.data.values || []);
 
     console.log(`${projects.length} Projekte im Index gefunden. Starte Download...`);
 
