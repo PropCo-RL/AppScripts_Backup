@@ -6,6 +6,38 @@ const { extractBackupProjects } = require('./backup-index');
 const BACKUP_INDEX_SPREADSHEET_ID = '1rLFAl4pdgADo6j_vaDxmPMd8kAHL0V8Pqp-DjeXBxLo';
 const BACKUP_INDEX_RANGE = "'Übersicht'!A:E";
 
+// ==========================================
+// HILFSFUNKTION: SCRIPT-IDS AUS GOOGLE SHEET LESEN
+// ==========================================
+async function fetchDynamicScriptIds(auth) {
+  try {
+    const sheets = google.sheets({ version: 'v4', auth });
+    console.log(`Lese Script-IDs aus Master-Sheet (${CONFIG.MASTER_SHEET_ID})...`);
+
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: CONFIG.MASTER_SHEET_ID,
+      range: CONFIG.RANGE,
+    });
+
+    const rows = res.data.values || [];
+    
+    // Leere Zellen filtern, Leerzeichen entfernen und IDs validieren
+    const validIds = rows
+      .map(r => (r[0] ? String(r[0]).trim() : ""))
+      .filter(id => id.length > 20 && !id.includes(" "));
+
+    const uniqueIds = [...new Set(validIds)];
+    console.log(`✓ ${uniqueIds.length} Script-IDs dynamisch aus dem Sheet geladen.`);
+    return uniqueIds;
+  } catch (error) {
+    console.error("Fehler beim Abrufen der IDs aus dem Google Sheet:", error.message);
+    throw error;
+  }
+}
+
+// ==========================================
+// HAUPTFUNKTION: SYNC ALLER SKRIPTE
+// ==========================================
 async function syncAllScripts() {
   try {
     const saCredentialsJson = process.env.GAPPSCRIPT_SA_CREDENTIALS;
@@ -42,6 +74,7 @@ async function syncAllScripts() {
     }
 
     let downloadedCount = 0;
+    let failedCount = 0;
 
     const expectedFolders = new Set();
     for (const project of projects) {
