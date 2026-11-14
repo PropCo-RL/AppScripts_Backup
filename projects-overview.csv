@@ -1,6 +1,8 @@
 "Projekt","Script-ID","GS-Datei","Repository-Pfad"
 "00_2_Code_Review","1dp37okyrjiZUin3aw3bkJYJvRnzFqItcC4dyxr8z-r4uPNvak928fz2J","register.js","projects/00_2_Code_Review/register.js"
 "00_3_GitHub_Write_Bucket","16b7LaifTKs4bMecLteJ3hEdNKzxVS-UySxm2IqqZhOXyppPiYEp3qco8","register.js","projects/00_3_GitHub_Write_Bucket/register.js"
+"00_3_GitHub_Write_Bucket","16b7LaifTKs4bMecLteJ3hEdNKzxVS-UySxm2IqqZhOXyppPiYEp3qco8","test.js","projects/00_3_GitHub_Write_Bucket/test.js"
+"00_5_Naechster_Schritt","1MK8W-Uu45yRlifU9W2aAV7ATguxpF13ESFxrx2gr_44ccG97FnXFPOcl","Code.js","projects/00_5_Naechster_Schritt/Code.js"
 "01_1_WA_API_Buchung_-__SST_Single_Source_of_Truth_","1kbpC7OBDlEQ1kp30-zDB6dVZwAD0J1_l1M-n6FtEwHOF4k2ayeIT4qhd","00_Static_IP_Fixie.js","projects/01_1_WA_API_Buchung_-__SST_Single_Source_of_Truth_/00_Static_IP_Fixie.js"
 "01_1_WA_API_Buchung_-__SST_Single_Source_of_Truth_","1kbpC7OBDlEQ1kp30-zDB6dVZwAD0J1_l1M-n6FtEwHOF4k2ayeIT4qhd","0_GoogleSitesCode.js","projects/01_1_WA_API_Buchung_-__SST_Single_Source_of_Truth_/0_GoogleSitesCode.js"
 "01_1_WA_API_Buchung_-__SST_Single_Source_of_Truth_","1kbpC7OBDlEQ1kp30-zDB6dVZwAD0J1_l1M-n6FtEwHOF4k2ayeIT4qhd","1_TwilioTest.js","projects/01_1_WA_API_Buchung_-__SST_Single_Source_of_Truth_/1_TwilioTest.js"
